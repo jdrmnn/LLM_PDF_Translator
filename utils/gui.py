@@ -26,12 +26,12 @@ def get_translate_status_request(status=None):
     if response.status_code == 200:
         raw_data = json.loads(response.content)
         # data is a list of dicts
-        data = {"file": [], "src_path": [], "target_path": [], "status": []}
+        data = {"file": [], "status": [], "src_path": [], "target_path": []}
         for item in raw_data:
             data["file"].append(item["file"])
+            data["status"].append(_convert_status(item["status"]))
             data["src_path"].append(item["src_path"])
             data["target_path"].append(item["target_path"])
-            data["status"].append(_convert_status(item["status"]))
         dataframe = pd.DataFrame.from_dict(data)
         return dataframe
     else:
@@ -536,11 +536,11 @@ def create_gradio_app(langs):
             #         gr.Label(label="No file available")
             #     else:
             #         gr.File(value=download_file(file), label="Download", file_types=[".pdf"])
-            download_file_btn = gr.DownloadButton(value=None, label="No file available")
+            download_file_btn = gr.DownloadButton(value=None, label="No file available", visible=False)
         refresh_btn.click(refresh_table,
             outputs=[result_table, download_file_box],
         )
-        download_file_box.input(lambda x: gr.DownloadButton(value=download_file(x), label="Download", interactive=True), inputs=[download_file_box], outputs=[download_file_btn])
+        download_file_box.input(lambda x: gr.DownloadButton(value=download_file(x), label="Download", interactive=True, visible=True), inputs=[download_file_box], outputs=[download_file_btn])
         
 
     page = gr.TabbedInterface(
