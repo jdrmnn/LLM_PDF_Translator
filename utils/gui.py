@@ -7,12 +7,12 @@ import gradio as gr
 import requests
 from loguru import logger
 from .database.file_db import FileDatabase
+from .database.basic_info_db import BasicInfoDatabase
 
 TRANSLATE_URL = "http://localhost:8765/translate_pdf/"
 CLEAR_TEMP_URL = "http://localhost:8765/clear_temp_dir/"
 GET_RESULT_URL = "http://localhost:8765/get_files/"
 DOWNLOAD_RESULT_URL = "http://localhost:8765/download_file/"
-
 
 def get_translate_status_request(status=None):
     def _convert_status(status):
@@ -56,7 +56,6 @@ def download_file(file_path):
         return output_file_path
     else:
         logger.error(f"An error occurred: {response.status_code}")
-
 
 def translate_request(
     save_to_folder: bool,
@@ -129,13 +128,15 @@ def translate_request(
         print(f"An error occurred: {response.status_code}")
 
 
-def update_folder(folder, info, root_dirs: list, index: int):
+def update_folder(folder, info, db_name: str, db_key: str):
     folder = folder[0]
+    db = BasicInfoDatabase(db_name)
     logger.info(f"Folder: {folder}, Folder info: {info}")
-    root_dir = os.path.abspath(os.path.join(root_dirs[index], folder))
-    root_dirs[index] = root_dir
-    return gr.update(choices=[".."] + get_folders(root_dir), value=None), gr.update(
-        value=f"### Download Folder: {root_dir}"
+    current_root_dir = db.get_value(db_key)
+    new_root_dir = os.path.abspath(os.path.join(current_root_dir, folder))
+    db.update_value(db_key, new_root_dir)
+    return gr.update(choices=[".."] + get_folders(new_root_dir), value=None), gr.update(
+        value=f"### Download Folder: {new_root_dir}"
     )
 
 
@@ -158,14 +159,18 @@ def download_and_translate(
     to_page,
     render_mode,
     add_blank_page,
-    suffix,
-    download_folder,
-    translate_folder,
+    db_name: str,
+    suffix
 ):
     if url_file_name == "":
         raise ValueError("Please enter a file name")
     elif url_file_name[-4:] != ".pdf":
         url_file_name += ".pdf"
+
+    basic_info_db = BasicInfoDatabase(db_name)
+
+    download_folder = basic_info_db.get_value("download_folder")
+    translate_folder = basic_info_db.get_value("translate_folder")
 
     # check if the file exists in the translate_folder
     if os.path.exists(os.path.join(download_folder, url_file_name)):
@@ -351,161 +356,141 @@ class DetermineSaveInFolderToTmpWidget:
         )
         return save_to_folder_checkbox, save_folder, translate_folder
 
+class GradioApp:
+    def __init__(self, langs, config):
+        self.langs = langs
+        self.config = config
+        self.check_db(config)
 
-def create_gradio_app(langs):
-    with gr.Blocks(theme="Soft") as upload_translator:
-        with gr.Column() as col:
-            title = gr.Markdown("## PDF Translator")
-            file = gr.File(label="select file", height=30, file_types=[".pdf"])
-            save_to_dir_widget = DetermineSaveInFolderToTmpWidget()
-            save_folder_checkbox, save_folder, translate_folder = (
-                save_to_dir_widget.get_widgets()
-            )
-            from_lang, to_lang = lang_widget(langs)
-
-            translate_all, from_page, to_page = translate_range_widget()
-
-            with gr.Row():
-                render_mode, add_blank_page = render_mode_widget()
-                suffix = gr.Textbox(
-                    label="suffix",
-                    info="only valid when save to server(not temp dir)",
-                    value="_translated",
+    def check_db(self, config):
+        basic_info_db = BasicInfoDatabase(self.config['database_name'])
+        keys = ["download_folder", "translate_folder"]
+        for key in keys:
+            if not basic_info_db.get_value(key):
+                basic_info_db.set_value(key, config[key])
+    
+    def create_gradio_app(self):
+        basic_info_db = BasicInfoDatabase(self.config['database_name'])
+        with gr.Blocks(theme="Soft") as upload_translator:
+            with gr.Column() as col:
+                title = gr.Markdown("## PDF Translator")
+                file = gr.File(label="select file", height=30, file_types=[".pdf"])
+                save_to_dir_widget = DetermineSaveInFolderToTmpWidget()
+                save_folder_checkbox, save_folder, translate_folder = (
+                    save_to_dir_widget.get_widgets()
                 )
+                from_lang, to_lang = lang_widget(self.langs)
 
-            btn = gr.Button(value="convert")
+                translate_all, from_page, to_page = translate_range_widget()
 
-            btn.click(
-                lambda save_to_folder, file, from_lang, to_lang, translate_all, from_page, to_page, render_mode, add_blank_page, suffix: translate_request(
-                    save_to_folder,
-                    file,
-                    save_to_dir_widget.save_folder,
-                    from_lang,
-                    to_lang,
-                    translate_all,
-                    from_page,
-                    to_page,
-                    render_mode,
-                    save_to_dir_widget.translate_folder,
-                    add_blank_page,
-                    suffix,
-                ),
-                inputs=[
-                    save_folder_checkbox,
-                    file,
-                    from_lang,
-                    to_lang,
-                    translate_all,
-                    from_page,
-                    to_page,
-                    render_mode,
-                    add_blank_page,
-                    suffix,
-                ],
-            )
-
-    with gr.Blocks(theme="Soft") as save_translator:
-        with gr.Column():
-            title = gr.Markdown("## Download a pdf file and translate it")
-            with gr.Row():
-                with gr.Column():
-                    url_link = gr.Textbox(label="url")
-                    url_file_name = gr.Textbox(label="file name")
-                    overwrite = gr.Checkbox(
-                        label="overwrite",
-                        info="overwrite the file when the file (both original and translation) exists",
-                        value=True,
+                with gr.Row():
+                    render_mode, add_blank_page = render_mode_widget()
+                    suffix = gr.Textbox(
+                        label="suffix",
+                        info="only valid when save to server(not temp dir)",
+                        value="_translated",
                     )
-                # with gr.Column():
-                #     refresh_btn = gr.Button(value="Refresh", size="sm")
-                #     @gr.render(refresh_btn)
-                #     def refresh(btn):
-                #         logger.info("Refresh btn pressed")
-                # get all the files in the database
-                # for (file, path, status) in file_path_status:
-                #     if status:
-                #         gr.File(label=file, value=path, file_types=[".pdf"])
-                #     else:
-                #         gr.Label(label=file+" (not translated)", value='Not available')
-            # submit button
-            btn = gr.Button(value="Download and Translate")
 
-            # Server file browser
-            folder_paths = ["/home/home/Docs/Papers", "/home/home/Docs/Papers"]
+                btn = gr.Button(value="convert")
 
-            download_folder_info = gr.Markdown(
-                f"### Download Folder: {folder_paths[0]}"
-            )
-            download_folder = gr.CheckboxGroup(
-                choices=[".."] + get_folders(folder_paths[0]),
-                value=None,
-                label="Download Folder",
-                show_label=False,
-                interactive=True,
-            )
-            download_folder.input(
-                lambda x, y: update_folder(x, y, folder_paths, 0),
-                inputs=(download_folder, download_folder_info),
-                outputs=[download_folder, download_folder_info],
-            )
-
-            translate_folder_info = gr.Markdown(
-                f"### Translate Folder: {folder_paths[1]}"
-            )
-            translate_folder = gr.CheckboxGroup(
-                choices=[".."] + get_folders(folder_paths[1]),
-                value=None,
-                label="Translate Folder",
-                show_label=False,
-                interactive=True,
-            )
-            translate_folder.input(
-                lambda x, y: update_folder(x, y, folder_paths, 1),
-                inputs=[translate_folder, translate_folder_info],
-                outputs=[translate_folder, translate_folder_info],
-            )
-
-            from_lang, to_lang = lang_widget(langs)
-
-            translate_all, from_page, to_page = translate_range_widget()
-            with gr.Row():
-                render_mode, add_blank_page = render_mode_widget()
-                suffix = gr.Textbox(label="suffix", value="_translated")
-
-            def _download_and_translate(
-                url_link,
-                url_file_name,
-                overwrite,
-                download_folder,
-                translate_folder,
-                from_lang,
-                to_lang,
-                translate_all,
-                from_page,
-                to_page,
-                render_mode,
-                add_blank_page,
-                suffix,
-            ):
-                return download_and_translate(
-                    url_link,
-                    url_file_name,
-                    overwrite,
-                    from_lang,
-                    to_lang,
-                    translate_all,
-                    from_page,
-                    to_page,
-                    render_mode,
-                    add_blank_page,
-                    suffix,
-                    folder_paths[0],
-                    folder_paths[1],
+                btn.click(
+                    lambda save_to_folder, file, from_lang, to_lang, translate_all, from_page, to_page, render_mode, add_blank_page, suffix: translate_request(
+                        save_to_folder,
+                        file,
+                        save_to_dir_widget.save_folder,
+                        from_lang,
+                        to_lang,
+                        translate_all,
+                        from_page,
+                        to_page,
+                        render_mode,
+                        save_to_dir_widget.translate_folder,
+                        add_blank_page,
+                        suffix,
+                    ),
+                    inputs=[
+                        save_folder_checkbox,
+                        file,
+                        from_lang,
+                        to_lang,
+                        translate_all,
+                        from_page,
+                        to_page,
+                        render_mode,
+                        add_blank_page,
+                        suffix,
+                    ],
                 )
 
-            btn.click(
-                _download_and_translate,
-                inputs=[
+        with gr.Blocks(theme="Soft") as save_translator:
+            with gr.Column():
+                title = gr.Markdown("## Download a pdf file and translate it")
+                with gr.Row():
+                    with gr.Column():
+                        url_link = gr.Textbox(label="url")
+                        url_file_name = gr.Textbox(label="file name")
+                        overwrite = gr.Checkbox(
+                            label="overwrite",
+                            info="overwrite the file when the file (both original and translation) exists",
+                            value=True,
+                        )
+                    # with gr.Column():
+                    #     refresh_btn = gr.Button(value="Refresh", size="sm")
+                    #     @gr.render(refresh_btn)
+                    #     def refresh(btn):
+                    #         logger.info("Refresh btn pressed")
+                    # get all the files in the database
+                    # for (file, path, status) in file_path_status:
+                    #     if status:
+                    #         gr.File(label=file, value=path, file_types=[".pdf"])
+                    #     else:
+                    #         gr.Label(label=file+" (not translated)", value='Not available')
+                # submit button
+                btn = gr.Button(value="Download and Translate")
+
+                # Server file browser
+                # folder_paths = ["/home/home/Docs/Papers", "/home/home/Docs/Papers"]
+
+                download_folder_info = gr.Markdown(
+                    f"### Download Folder: {basic_info_db.get_value('download_folder')}"
+                )
+                download_folder = gr.CheckboxGroup(
+                    choices=[".."] + get_folders(basic_info_db.get_value("download_folder")),
+                    value=None,
+                    label="Download Folder",
+                    show_label=False,
+                    interactive=True,
+                )
+                download_folder.input(
+                    lambda x, y: update_folder(x, y, self.config['database_name'], 'download_folder'),
+                    inputs=(download_folder, download_folder_info),
+                    outputs=[download_folder, download_folder_info],
+                )
+
+                translate_folder_info = gr.Markdown(
+                    f"### Translate Folder: {basic_info_db.get_value('translate_folder')}"
+                )
+                translate_folder = gr.CheckboxGroup(
+                    choices=[".."] + get_folders(basic_info_db.get_value("translate_folder")),
+                    value=None,
+                    label="Translate Folder",
+                    show_label=False,
+                    interactive=True,
+                )
+                translate_folder.input(
+                    lambda x, y: update_folder(x, y, self.config['database_name'], 'translate_folder'),
+                    inputs=[translate_folder, translate_folder_info],
+                    outputs=[translate_folder, translate_folder_info],
+                )
+
+                from_lang, to_lang = lang_widget(self.langs)
+
+                translate_all, from_page, to_page = translate_range_widget()
+                with gr.Row():
+                    render_mode, add_blank_page = render_mode_widget()
+                    suffix = gr.Textbox(label="suffix", value="_translated")
+
+                def _download_and_translate(
                     url_link,
                     url_file_name,
                     overwrite,
@@ -519,42 +504,71 @@ def create_gradio_app(langs):
                     render_mode,
                     add_blank_page,
                     suffix,
-                ]
+                ):
+                    gr.Info("Task submitted")
+                    return download_and_translate(
+                        url_link,
+                        url_file_name,
+                        overwrite,
+                        from_lang,
+                        to_lang,
+                        translate_all,
+                        from_page,
+                        to_page,
+                        render_mode,
+                        add_blank_page,
+                        self.config['database_name'],
+                        suffix
+                    )
+
+                btn.click(
+                    _download_and_translate,
+                    inputs=[
+                        url_link,
+                        url_file_name,
+                        overwrite,
+                        download_folder,
+                        translate_folder,
+                        from_lang,
+                        to_lang,
+                        translate_all,
+                        from_page,
+                        to_page,
+                        render_mode,
+                        add_blank_page,
+                        suffix,
+                    ]
+                )
+        with gr.Blocks(theme="Soft") as result_page:
+            refresh_btn = gr.Button(value="Refresh")
+            # dataframe = get_translate_status_request()
+            dataframe = pd.DataFrame(
+                {"file": [], "src_path": [], "target_path": [], "status": []}
             )
-    with gr.Blocks(theme="Soft") as result_page:
-        refresh_btn = gr.Button(value="Refresh")
-        # dataframe = get_translate_status_request()
-        dataframe = pd.DataFrame(
-            {"file": [], "src_path": [], "target_path": [], "status": []}
+            result_table = gr.DataFrame(value=dataframe)
+            with gr.Row():
+                download_file_box = gr.Dropdown(label="Download File", choices=[], value=None)
+                # @gr.render(download_file_box)
+                # def _download_file(file):
+                #     if file is None:
+                #         gr.Label(label="No file available")
+                #     else:
+                #         gr.File(value=download_file(file), label="Download", file_types=[".pdf"])
+                download_file_btn = gr.DownloadButton(value=None, label="No file available", visible=False)
+            refresh_btn.click(refresh_table,
+                outputs=[result_table, download_file_box],
+            )
+            download_file_box.input(lambda x: gr.DownloadButton(value=download_file(x), label="Download", interactive=True, visible=True), inputs=[download_file_box], outputs=[download_file_btn])
+            
+
+        page = gr.TabbedInterface(
+            [upload_translator, save_translator, result_page],
+            ["Upload and Translate", "Download and Translate", "Results"],
         )
-        result_table = gr.DataFrame(value=dataframe)
-        with gr.Row():
-            download_file_box = gr.Dropdown(label="Download File", choices=[], value=None)
-            # @gr.render(download_file_box)
-            # def _download_file(file):
-            #     if file is None:
-            #         gr.Label(label="No file available")
-            #     else:
-            #         gr.File(value=download_file(file), label="Download", file_types=[".pdf"])
-            download_file_btn = gr.DownloadButton(value=None, label="No file available", visible=False)
-        refresh_btn.click(refresh_table,
-            outputs=[result_table, download_file_box],
-        )
-        download_file_box.input(lambda x: gr.DownloadButton(value=download_file(x), label="Download", interactive=True, visible=True), inputs=[download_file_box], outputs=[download_file_btn])
-        
 
-    page = gr.TabbedInterface(
-        [upload_translator, save_translator, result_page],
-        ["Upload and Translate", "Download and Translate", "Results"],
-    )
+        # page.launch(share=False, auth=("poppanda", "poppanda"), server_port=8765, server_name="0.0.0.0")
+        page.auth = [("poppanda", "panda60x"), ("wmx", "hellowmx")]
+        # page.auth_message = None
 
-    # page.launch(share=False, auth=("poppanda", "poppanda"), server_port=8765, server_name="0.0.0.0")
-    page.auth = [("poppanda", "panda60x"), ("wmx", "hellowmx")]
-    page.auth_message = None
+        return page
 
-    return page
-
-
-if __name__ == "__main__":
-    app = create_gradio_app()
-    app.launch(share=True, auth=("poppanda", "poppanda"))

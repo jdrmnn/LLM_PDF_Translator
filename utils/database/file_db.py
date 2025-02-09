@@ -27,63 +27,91 @@ class FileDatabase(Database):
         self.clear_unfinished_files()
 
     def clear_unfinished_files(self):
-        self.c.execute(
+        conn, c = self.new_cursor()
+        c.execute(
             f"DELETE FROM {self.table_name} WHERE status = ?", (FileStatus.TRANSLATING.value,)
         )
-        self.conn.commit()
+        conn.commit()
         # delete NOT_TRANSLATED files
-        self.c.execute(
+        c.execute(
             f"DELETE FROM {self.table_name} WHERE status = ?", (FileStatus.NOT_TRANSLATED.value,)
         )
-        self.conn.commit()
+        conn.commit()
+        conn.close()
         
     def set_translating_to_not_translated(self):
-        self.c.execute(
+        conn, c = self.new_cursor()
+        c.execute(
             f"UPDATE {self.table_name} SET status = ? WHERE status = ?",
             (FileStatus.NOT_TRANSLATED.value, FileStatus.TRANSLATING.value),
         )
-        self.conn.commit()
+        conn.commit()
+        conn.close()
         
     def set_translating(self, file: str):
-        self.c.execute(
-            f"UPDATE {self.table_name} SET status = ? WHERE file = ?",
-            (FileStatus.TRANSLATING.value, file),
-        )
-        self.conn.commit()
+        conn, c = self.new_cursor()
+        while True:
+            try:
+                c.execute(
+                    f"UPDATE {self.table_name} SET status = ? WHERE file = ?",
+                    (FileStatus.TRANSLATING.value, file),
+                )
+                conn.commit()
+                break
+            except Exception as e:
+                logger.error(f"Error updating {file} status to TRANSLATING: {e}")
+                continue
+        conn.close()
         
     def set_translated(self, file: str):
-        self.c.execute(
+        conn, c = self.new_cursor()
+        c.execute(
             f"UPDATE {self.table_name} SET status = ? WHERE file = ?",
             (FileStatus.TRANSLATED.value, file),
         )
-        self.conn.commit()
+        conn.commit()
+        conn.close()
 
     def add_file(self, file, src_path, target_path, status: FileStatus | int):
         if isinstance(status, FileStatus):
             status = status.value
-        self.c.execute(
+        conn, c = self.new_cursor()
+        c.execute(
             f"INSERT INTO {self.table_name} VALUES (?, ?, ?, ?)",
             (file, src_path, target_path, status),
         )
-        self.conn.commit()
+        conn.commit()
+        conn.close()
     
     def remove_file(self, file):
-        self.c.execute(f"DELETE FROM {self.table_name} WHERE file = ?", (file,))
-        self.conn.commit()
+        conn, c = self.new_cursor()
+        c.execute(f"DELETE FROM {self.table_name} WHERE file = ?", (file,))
+        conn.commit()
+        conn.close()
 
     def update_file_status(self, file, status):
-        self.c.execute(
+        conn, c = self.new_cursor()
+        c.execute(
             f"UPDATE {self.table_name} SET status = ? WHERE file = ?", (status, file)
         )
-        self.conn.commit()
+        conn.commit()
+        conn.close()
     
     def get_files(self, status: Optional[FileStatus]):
+        conn, c = self.new_cursor()
         if status is None:
-            self.c.execute(f"SELECT * FROM {self.table_name}")
+            c.execute(f"SELECT * FROM {self.table_name}")
         else:
-            self.c.execute(f"SELECT * FROM {self.table_name} WHERE status = ?", (status.value,))
-        return self.c.fetchall()
+            c.execute(f"SELECT * FROM {self.table_name} WHERE status = ?", (status.value,))
+        result = c.fetchall()
+        conn.commit()
+        conn.close()
+        return result
     
     def check_file_exists(self, file):
-        self.c.execute(f"SELECT * FROM {self.table_name} WHERE file = ?", (file,))
-        return self.c.fetchone() is not None
+        conn, c = self.new_cursor()
+        c.execute(f"SELECT * FROM {self.table_name} WHERE file = ?", (file,))
+        result = c.fetchone() is not None
+        conn.commit()
+        conn.close()
+        return result

@@ -7,8 +7,6 @@ import sqlite3
 class Database:
     def __init__(self, database_name, table_name, table_format: dict):
         self.database = database_name
-        self.conn = sqlite3.connect(self.database)
-        self.c = self.conn.cursor()
         self.table_name = table_name
         self.table_format = ""
         for key, value in table_format.items():
@@ -25,33 +23,43 @@ class Database:
             else:
                 print("Invalid data type")
 
+    def new_cursor(self) -> tuple[sqlite3.Connection, sqlite3.Cursor]:
+        conn = sqlite3.connect(self.database)
+        return conn, conn.cursor()
+
     def check_table(self):
         # Check if the table exists
-        self.c.execute(
+        conn, c = self.new_cursor()
+        c.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (self.table_name,),
         )
-        if self.c.fetchone() is None:
-            self.c.execute(
+        if c.fetchone() is None:
+            c.execute(
                 f"""CREATE TABLE {self.table_name} ({self.table_format[:-2]})"""
             )
-            self.conn.commit()
+            conn.commit()
+        conn.close()
 
     def delete_db(self):
-        self.c.execute(f"DROP TABLE {self.table_name}")
-        self.conn.commit()
+        conn, c = self.new_cursor()
+        c.execute(f"DROP TABLE {self.table_name}")
+        conn.commit()
+        conn.close()
 
     def recreate_db(
         self,
     ):
         # Check if the table exists
-        self.c.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='files'"
+        conn, c = self.new_cursor()
+        c.execute(
+            f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (self.table_name,)
         )
-        if self.c.fetchone() is not None:
-            self.c.execute("DROP TABLE files")
-        self.c.execute(
-            """CREATE TABLE files
+        if c.fetchone() is not None:
+            c.execute("DROP TABLE files")
+        c.execute(
+            f"""CREATE TABLE {self.table_name}
                         (file text, src_path text, target_path text, status boolean)"""
         )
-        self.conn.commit()
+        conn.commit()
+        conn.close()

@@ -25,3 +25,8 @@ render:
 multi_thread:
   enable: false
   # num_thread: 4
+
+gui:
+  database_name: 'pdf_translator_files.db'
+  download_folder: 'download'
+  translate_folder: 'translate'

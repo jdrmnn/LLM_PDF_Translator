@@ -4,7 +4,7 @@ from threading import Thread
 from multiprocessing import Pool
 import tempfile
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Tuple
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -33,7 +33,7 @@ logger.remove()
 logger.add(sys.stderr, level="INFO")
 
 
-from utils import create_gradio_app, load_config
+from utils import GradioApp, load_config
 from modules import (
     load_translator,
     load_layout_engine,
@@ -105,13 +105,12 @@ class TranslateApi:
     def __init__(
         self,
         model_root_dir: Path = Path("/app/models/"),
-        database_neme: str = "pdf_translator_files.db",
         enable_api: bool = False,
         enable_gui: bool = False,
     ):
         # The database
-        self.database_name = database_neme
-        self.file_db = FileDatabase(database_neme)
+        self.database_name = cfg['gui']['database_name']
+        self.file_db = FileDatabase(self.database_name)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp_dir_name = Path(self.temp_dir.name)
 
@@ -150,7 +149,8 @@ class TranslateApi:
             )
 
         if enable_gui:
-            gradioapp = create_gradio_app(translator.get_languages())
+            gradioapp_ = GradioApp(translator.get_languages(), cfg['gui'])
+            gradioapp = gradioapp_.create_gradio_app()
             gr.mount_gradio_app(self.app, gradioapp, "/")
 
     def run(self):
@@ -234,7 +234,7 @@ class TranslateApi:
         output_file_path: Optional[Path | str] = None,
         render_mode: Optional[str] = None,
         add_blank_page: bool = False,
-    ) -> None:
+    ) -> str:
         """Submit a translation request."""
         req = TranslateRequest(
             pdf_path=pdf_path,
