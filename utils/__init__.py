@@ -2,7 +2,7 @@ import os
 from .textwrap_local import fw_fill, fw_wrap
 from .ocr_model import OCRModel
 from .layout_model import LayoutAnalyzer
-from .gui import create_gradio_app
+from .gui import GradioApp
 from PIL import Image, ImageDraw, ImageFont
 from loguru import logger
 
@@ -16,11 +16,6 @@ def load_config(base_config_path, override_config_path):
     
     final_config = base_config
 
-    if os.path.exists(override_config_path):
-        with open(override_config_path, 'r') as override_file:
-            override_config = yaml.safe_load(override_file)
-            final_config = update(base_config, override_config)
-    
     # Update the base config with the override config
     # This recursively updates nested dictionaries
     def update(d, u):
@@ -30,6 +25,11 @@ def load_config(base_config_path, override_config_path):
             else:
                 d[k] = v
         return d
+
+    if os.path.exists(override_config_path):
+        with open(override_config_path, 'r') as override_file:
+            override_config = yaml.safe_load(override_file)
+            final_config = update(base_config, override_config)
 
     return final_config
 
