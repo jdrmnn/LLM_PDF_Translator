@@ -238,7 +238,7 @@ class LLMTranslateBase(TranslateBase):
         self.from_lang = from_lang
         self.to_lang = to_lang
         check_time = 0
-        base_prompt = f"You are an {from_lang}-to-{to_lang} translator. (from_lang, to_lang)\n - Keep all special characters / HTML tags / links as in the source text. \n - Do not pay any attention to the http links in the text\n - Return the {to_lang} translation only.\n"
+        base_prompt = f"You are an {from_lang}-to-{to_lang} translator. \n - Keep all special characters / HTML tags / links as in the source text. \n - Do not pay any attention to the http links in the text\n - Return the {to_lang} translation only.\n"
         while True:
             if self.check_response:
                 prompt = f"{base_prompt}You have translated once before, but the feedback of your translation is bad, the feedback is {self.check_response}. Pay attention to your translation later.\nHere is the text to translate, return the translation only:\n\n{text}"
