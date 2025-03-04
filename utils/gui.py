@@ -361,6 +361,10 @@ class GradioApp:
         self.langs = langs
         self.config = config
         self.check_db(config)
+        try:
+            self.config.auth
+        except:
+            self.config.auth = None
 
     def check_db(self, config):
         basic_info_db = BasicInfoDatabase(self.config['database_name'])
@@ -567,7 +571,10 @@ class GradioApp:
         )
 
         # page.launch(share=False, auth=("poppanda", "poppanda"), server_port=8765, server_name="0.0.0.0")
-        page.auth = [("poppanda", "panda60x"), ("wmx", "hellowmx")]
+        if self.config.auth is None:
+            page.auth = [("admin", "password")]
+        else:
+            page.auth=self.config.auth
         # page.auth_message = None
 
         return page
