@@ -5,19 +5,21 @@ from .layout_model import LayoutAnalyzer
 from .gui import GradioApp
 from PIL import Image, ImageDraw, ImageFont
 from loguru import logger
-
 import yaml
+from string import Template
 
 __all__ = ["fw_fill", "fw_wrap", "OCRModel", "LayoutAnalyzer"]
 
 def load_config(base_config_path, override_config_path):
-    with open(base_config_path, 'r') as base_file:
-        base_config = yaml.safe_load(base_file)
-    
+    def load_and_expand(path):
+        with open(path, 'r') as file:
+            content = file.read()
+            expanded = Template(content).safe_substitute(os.environ)
+            return yaml.safe_load(expanded)
+
+    base_config = load_and_expand(base_config_path)
     final_config = base_config
 
-    # Update the base config with the override config
-    # This recursively updates nested dictionaries
     def update(d, u):
         for k, v in u.items():
             if isinstance(v, dict):
@@ -27,9 +29,8 @@ def load_config(base_config_path, override_config_path):
         return d
 
     if os.path.exists(override_config_path):
-        with open(override_config_path, 'r') as override_file:
-            override_config = yaml.safe_load(override_file)
-            final_config = update(base_config, override_config)
+        override_config = load_and_expand(override_config_path)
+        final_config = update(base_config, override_config)
 
     return final_config
 

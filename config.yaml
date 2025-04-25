@@ -1,7 +1,7 @@
 translator:
-  type: ollama # openai / ollama / qwen
-  api_key: YOUR-KEY-GOES-HERE
-  model: 'qwen2.5:32b'
+  type: openai # openai / ollama / qwen
+  api_key: ${OPENAI_API_KEY}  # Loaded from an env var
+  model: 'gpt-3.5-turbo'
   # the following args are only for ollama and non multi-thread mode(the multi_thread.enable should be false)
   # restart container before ocr and layout model to avoid high vram usage at local
   restart_container: true 
